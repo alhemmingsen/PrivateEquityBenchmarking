@@ -1,0 +1,160 @@
+This is a VBA function to calculate public market equivalent benchmark returns for a private equity investment. This function is adapted to SQL / Access.
+This will take a recordset or query with CashFlows, CashflowDates, Total return index values, and a index ID. 
+It will calculate a IRR for the investment, a public market equivalent for the investment, and write those values to a table, including items like Manager / fund iD, date, and index ID 
+Feel free to adapt this for your purposes
+
+
+Private Sub PEIRRCalculate_Click()
+  
+  'Assumes you have a table or query with a field for the Payee, the Payment, and the date paid.
+  Dim Payments() As Double
+  Dim Dates() As Date
+  Dim IndexValues() As Double
+  Dim PMEPlusCashFlows() As Double
+  
+  Dim rs As DAO.Recordset
+  Dim I As Integer
+  Dim strsql As String
+
+  
+  Dim db As DAO.Database
+Set db = CurrentDb
+Dim qdf As DAO.QueryDef
+
+Set qdf = db.QueryDefs("QryPEManagerIRR2")
+Dim prm As DAO.Parameter
+
+For Each prm In qdf.Parameters
+prm.Value = Eval(prm.Name)
+Next prm
+
+Set rs = qdf.OpenRecordset(dbOpenDynaset)
+
+  
+Dim Rows As Integer
+I = 0
+If Not rs.EOF And Not rs.BOF Then
+    rs.MoveLast
+    Rows = rs.RecordCount
+    rs.MoveFirst
+'Fill Payments and dates.
+    ReDim Payments(Rows - 1)
+    ReDim Dates(Rows - 1)
+    ReDim TRIndexValues(Rows - 1)
+    ReDim Contributions(Rows - 1)
+    ReDim Distributions(Rows - 1)
+    ReDim FVContributions(Rows - 1)
+    ReDim FVDistributions(Rows - 1)
+    Dim FinalIndexValue As Double
+    Dim FinalResidualValue As Double
+  Dim MSgString As String
+Dim IndexID As String
+
+  
+
+Else
+    Rows = 0
+End If
+
+  
+rs.MoveFirst
+  
+  Do While Not rs.EOF
+    Payments(I) = rs.Fields("CashFlow").Value
+    Dates(I) = rs.Fields("CashFlowDate").Value
+    TRIndexValues(I) = rs.Fields("TRIndexValue").Value
+        If Payments(I) <= 0 Then
+            Contributions(I) = rs.Fields("CashFlow").Value
+            Distributions(I) = 0
+        Else
+            Contributions(I) = 0
+            Distributions(I) = rs.Fields("CashFlow").Value
+        End If
+            
+    If I = Rows - 1 Then
+        FinalIndexValue = rs.Fields("TRIndexValue").Value
+        FinalResidualValue = rs.Fields("CashFlow").Value
+        IndexID = rs.Fields("DefaultIndexID").Value
+    End If
+    
+    
+    
+    Debug.Print I
+    I = I + 1
+    rs.MoveNext
+  Loop
+  
+  
+  For I = 0 To rs.RecordCount - 1
+    Debug.Print Payments(I) & " " & Dates(I)
+  Next I
+
+I = 0
+rs.MoveFirst
+ 
+ Do While Not rs.EOF
+    
+    If I = Rows - 1 Then
+        FVContributions(I) = 0
+        FVDistributions(I) = 0
+    Else
+        FVContributions(I) = Contributions(I) * FinalIndexValue / TRIndexValues(I)
+        FVDistributions(I) = Distributions(I) * FinalIndexValue / TRIndexValues(I)
+    End If
+    
+    
+    Debug.Print I
+    I = I + 1
+    rs.MoveNext
+  Loop
+    
+    
+'Calculate Lambda
+   Dim lambda As Double
+   Dim TotalFVContributions As Double
+   Dim TotalFVDistribtuions As Double
+   
+
+        TotalFVContributions = Excel.WorksheetFunction.Sum(FVContributions)
+        TotalFVDistributions = Excel.WorksheetFunction.Sum(FVDistributions)
+    
+
+
+  lambda = (-1 * TotalFVContributions - FinalResidualValue) / TotalFVDistributions
+
+'calculate scaled distributions
+    ReDim ScaledDistributions(Rows - 1)
+    ReDim PMEPlusCashFlows(Rows - 1)
+
+I = 0
+rs.MoveFirst
+ MSgString = "Dates are "
+ Do While Not rs.EOF
+    
+    
+    If I = Rows - 1 Then
+    
+    PMEPlusCashFlows(I) = FinalResidualValue
+
+    Else
+        ScaledDistributions(I) = Distributions(I) * lambda
+        PMEPlusCashFlows(I) = Contributions(I) + ScaledDistributions(I)
+    End If
+ MSgString = MSgString & Dates(I) & " ,"
+ 
+    Debug.Print I
+    I = I + 1
+    rs.MoveNext
+  Loop
+
+
+Me!SubFormPrivateEquityIRRs.SourceObject = ""
+
+DoCmd.RunSQL "Insert into TblInvestmentPEIRR (ManagerID, ManagerIRR, PMEEquivalentIRR, IndexIDUsedForPME,IRRDate)" & _
+"VALUES (" & """" & Me.PrivateEquityCashFlowSelect & """" & ", " & XIRR_Wrapper(Payments, Dates, 0) & ", " & XIRR_Wrapper(PMEPlusCashFlows, Dates, 0) & ", " & """" & IndexID & """" & ", " & """" & Dates(Rows - 1) & """" & ")"
+
+
+
+
+
+End Sub
