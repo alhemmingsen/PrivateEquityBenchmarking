@@ -1,0 +1,92 @@
+The below is an VBA function usable in excel for purposes of benchmarking the performance of a private equity investment. 
+An array of cash flows and dates can produce an IRR for a private equity investment. This below function will calculate a public market equivalent benchmark.
+
+
+Public Function Parkland_PMEPLUSBenchmark(Dates, Cashflows, IndexValues)
+' calculate a public market equivalent benchmark for a PE fund according PME PLus methodology set out by Rouvinez  2003. Requires vertical arrays of dates, non 0 cash flows and Index values. Last cash flow can be either ending NAV or final distribution
+
+'Set up arrays for dates and cash flows, and index values
+With Application
+    ArrayDates = .Transpose(.Transpose(Dates))
+    ArrayCashFlows = .Transpose(.Transpose(Cashflows))
+    ArrayIndexValues = .Transpose(.Transpose(IndexValues))
+End With
+
+'Create arrays of contributions and distributions
+    n = UBound(ArrayIndexValues, 1)
+    m = n - 1
+    
+    ReDim Contributions(m, 1)
+    ReDim Distributions(m, 1)
+    
+    For i = 1 To m
+    
+        If ArrayCashFlows(i, 1) <= 0 Then
+            Contributions(i - 1, 0) = ArrayCashFlows(i, 1)
+            Distributions(i - 1, 0) = 0
+        Else
+            Contributions(i - 1, 0) = 0
+            Distributions(i - 1, 0) = ArrayCashFlows(i, 1)
+        End If
+        
+    Next i
+
+'Calculate FV Dist and FV Contributions
+
+    ReDim FVContributions(m, 1)
+    ReDim FVDistributions(m, 1)
+
+        'Calculate latest indexValue and residualcalue
+            Dim FinalIndexValue As Double
+            
+            FinalIndexValue = ArrayIndexValues(n, 1)
+            FinalResidualValue = ArrayCashFlows(n, 1)
+    
+    For i = 1 To m
+        FVContributions(i - 1, 0) = Contributions(i - 1, 0) * FinalIndexValue / ArrayIndexValues(i, 1)
+        FVDistributions(i - 1, 0) = Distributions(i - 1, 0) * FinalIndexValue / ArrayIndexValues(i, 1)
+    Next i
+
+'Calculate Lambda
+   Dim lambda As Double
+   Dim TotalFVContributions As Double
+
+        TotalFVContributions = Application.WorksheetFunction.Sum(FVContributions)
+        TotalFVDistributions = Application.WorksheetFunction.Sum(FVDistributions)
+    
+
+
+  lambda = (-1 * TotalFVContributions - FinalResidualValue) / TotalFVDistributions
+
+'calculate scaled distributions
+    ReDim ScaledDistributions(m, 1)
+    
+    For i = 1 To m
+    ScaledDistributions(i - 1, 0) = Distributions(i - 1, 0) * lambda
+    Next i
+
+'Build PME Equivalent Cash FLow Schedule
+
+    ReDim PMEPLusCashFlows(m, 1)
+   For i = 1 To m
+   PMEPLusCashFlows(i - 1, 0) = Contributions(i - 1, 0) + ScaledDistributions(i - 1, 0)
+    Next i
+    PMEPLusCashFlows(n - 1, 0) = FinalResidualValue
+    
+'Convert Date array into true dates
+
+    ReDim ArrayTrueDates(m, 1)
+        For i = 1 To n
+        ArrayTrueDates(i - 1, 0) = CDate(ArrayDates(i, 1))
+        Next i
+
+
+
+Parkland_PMEPLUSBenchmark = Application.WorksheetFunction.Xirr(PMEPLusCashFlows, ArrayTrueDates)
+'PMEPLUSBenchmark = TotalFVDistributions
+
+
+
+
+
+End Function
